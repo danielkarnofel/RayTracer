@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<title>Raytracer</title>
+</head>
+<body>
+<canvas id='my-canvas'></canvas>
+
+<script src='Math/Vector3.js'></script>
+<script src='Math/Matrix3.js'></script>
+<script src='Math/Ray.js'></script>
+<script src='SceneObjects/SceneObject.js'></script>
+<script src='SceneObjects/Box.js'></script>
+<script src='SceneObjects/Disk.js'></script>
+<script src='SceneObjects/Plane.js'></script>
+<script src='SceneObjects/Sphere.js'></script>
+
+<script>
+
+// ********************************************************************************
+// Canvas setup
+
+// Get a reference to the javascript object associated with the canvas
+const canvas = document.getElementById('my-canvas');
+
+// Canvas dimensions
+const pixelsAcross = 256;  // pixels across
+const pixelsDown = 256; // pixels down
+
+// Set dimensions and pixel scale
+const pixelScale = 3;
+canvas.width = pixelsAcross;
+canvas.height = pixelsDown;
+canvas.style.cssText = 'width:' + (pixelsAcross * pixelScale) + 'px;height:' + (pixelsDown * pixelScale) + 'px';
+
+// Get the context from the canvas (in this case we just want 2d)
+const canvasContext = canvas.getContext('2d');
+
+// Get an array representing all of the pixels
+// Arranged left to right, top to bottom
+const imageData = canvasContext.getImageData(0, 0, pixelsAcross, pixelsDown);
+
+// ********************************************************************************
+
+// ********************************************************************************
+
+// Raytracer scene data setup
+const fov = 45;
+let fovRadians = fov * Math.PI/180;
+
+const pixelGridWidth = 2;
+const pixelWidth = pixelGridWidth/pixelsAcross;
+const pixelHalfWidth = pixelWidth/2; 
+
+// Anti-aliasing supersamples
+const pixelSamples = 4;
+const sampleOffset = pixelWidth/pixelSamples; // 4 supersamples per pixel
+const sampleRotation = Math.PI/6; // rotated square
+const offsets = [
+	[0, 	 		 sampleOffset], 	// top
+	[0, 			-sampleOffset], 	// bottom
+	[sampleOffset, 	 0			 ], 	// right
+	[-sampleOffset,  0			 ], 	// left
+];
+
+function rotateX(x, y, a) {
+	return x*Math.cos(a) - y*Math.sin(a);
+}
+
+function rotateY(x, y, a) {
+	return x*Math.sin(a) + y*Math.cos(a);
+}
+
+const roffsets = offsets.map(([x, y]) => [
+	rotateX(x, y, sampleRotation),
+	rotateY(x, y, sampleRotation)
+]);
+
+// Camera coordinates
+let eyeDistance = (pixelGridWidth/2) / Math.tan(fovRadians/2);
+let eyeCoordinate = new Vector3(0, 0, eyeDistance);
+
+// Colors
+const backgroundColor = new Vector3(0.1, 0.1, 0.1);
+const black = new Vector3(0, 0, 0);
+const white = new Vector3(1, 1, 1);
+const red = new Vector3(1, 0, 0);
+const green = new Vector3(0, 1, 0);
+const blue = new Vector3(0, 0, 1);
+
+// Define the scene objects here ------------------
+
+const floor = new Plane(
+    new Material(white, 0.2, 0),
+    new Vector3(0, 1, 0),            // normal
+    new Vector3(0, -1, 0),           // valid point
+);
+const ceiling = new Plane(
+    new Material(white, 0.0, 0), 
+    new Vector3(0, -1, 0),           // normal
+    new Vector3(0, 1, 0),            // valid point
+);
+const leftWall = new Plane(
+    new Material(red, 0.2, 0), 
+    new Vector3(1, 0, 0),            // normal
+    new Vector3(-1, 0, 0),           // valid point
+);
+const rightWall = new Plane(
+    new Material(green, 0.2, 0), 
+    new Vector3(-1, 0, 0),           // normal
+    new Vector3(1, 0, 0),            // valid point
+);
+const backWall = new Plane(
+    new Material(blue, 0.2, 0), 
+    new Vector3(0, 0, 1),            // normal
+    new Vector3(0, 0, -2),           // valid point
+);
+
+const box = new Box(
+  new Material(white, 0.3, 0),
+  new Vector3(-0.4, -0.75, -1.25),	// center
+  new Vector3(0.5, 0.5, 0.5),		// dimensions
+  new Vector3(0, 0.5, 0),			// rotation
+);
+const disk = new Disk(
+  new Material(white, 0.8, 0),
+  new Vector3(0, 0, 1),				// normal
+  new Vector3(0, -0.4, -1.99),		// center
+  0.5,								// radius
+);
+const sphere = new Sphere(
+	new Material(white, 0.8, 0),
+	new Vector3(0.5, -0.75, -1),	// center
+	0.25,							// radius
+);
+
+// Add all objects to the scene
+const scene = [floor, ceiling, rightWall, leftWall, backWall, box, disk, sphere];
+
+// Point light initial position
+const pointLight = new Vector3(0, 0.9, -1);
+const ambientLight = 0.2;
+
+// Number of reflections
+const maxDepth = 3;
+
+// end of raytracer setup ******************************************************
+
+
+
+// -----------------------------------------------------------------------------
+function offsetPoint(point, direction) {
+	return point.clone().add(direction.clone().multiplyScalar(1e-4));
+}
+
+// -----------------------------------------------------------------------------
+function isInShadow(hitResult, hitObject) {
+	const intersectionToLight = Vector3.fromTo(hitResult.point, pointLight);
+	const lightDirection = intersectionToLight.clone().normalize();
+	const shadowRayOrigin = offsetPoint(hitResult.point, lightDirection);
+	const shadowRay = new Ray(shadowRayOrigin, lightDirection);
+
+	let shadowResult;
+	scene.forEach((object) => {
+		const result = object.raycast(shadowRay);
+		if (result.hit && (!shadowResult || result.distance <= shadowResult.distance)) {
+			shadowResult = result;
+		}
+	});
+	return shadowResult && (shadowResult.distance < intersectionToLight.length());
+}
+
+// -----------------------------------------------------------------------------
+function computeReflectionRay(hitResult, ray) {
+	let normalProjection = hitResult.normal.clone().multiplyScalar(ray.direction.dot(hitResult.normal));
+	const reflectionDirection = ray.direction.clone().subtract(normalProjection.multiplyScalar(2));
+	// const reflectionOrigin = offsetPoint(hitResult.point, hitResult.normal);
+	return new Ray(hitResult.point, reflectionDirection);
+}
+
+// -----------------------------------------------------------------------------
+function clamp(value, min = 0, max = 1) {
+	return Math.min(Math.max(value, min), max);
+}
+
+// -----------------------------------------------------------------------------
+function getColor(ray, currentDepth = 0) {
+	let hitResult;
+	let hitObject;
+	scene.forEach((object) => {
+		const result = object.raycast(ray);
+		if (result.hit && (!hitResult || result.distance < hitResult.distance)) {
+			hitResult = result;
+			hitObject = object;
+		}
+	});	
+	if (!hitResult) return backgroundColor;
+
+	let localColor;
+	if (isInShadow(hitResult, hitObject)) {
+		localColor = hitObject.material.color.clone().multiplyScalar(ambientLight);
+	} else {
+		let normalDotLight = clamp(hitResult.normal.dot(Vector3.fromTo(hitResult.point, pointLight).normalize()));
+		localColor = hitObject.material.color.clone().multiplyScalar(normalDotLight);
+	}
+
+	if (currentDepth >= maxDepth || hitObject.reflectivity <= 0) {
+		return localColor;
+	}
+
+	let reflectionColor = getColor(computeReflectionRay(hitResult, ray), currentDepth+1);
+	let localWeight = 1.0 - hitObject.material.reflectivity;
+	let reflectionWeight = hitObject.material.reflectivity;
+	return (localColor.multiplyScalar(localWeight)).add(reflectionColor.multiplyScalar(reflectionWeight));
+}
+
+// -----------------------------------------------------------------------------
+function setPixelColor(xPixelIndex, yPixelIndex, color) {
+	const index = (yPixelIndex * pixelsAcross + xPixelIndex) * 4;
+
+	imageData.data[index + 0] = clamp(color.x) * 255; // red channel
+	imageData.data[index + 1] = clamp(color.y) * 255; // green channel
+	imageData.data[index + 2] = clamp(color.z) * 255; // blue channel
+	imageData.data[index + 3] = 255;
+}
+
+// -----------------------------------------------------------------------------
+function generateRaysForPixel(xPixelIndex, yPixelIndex) {
+
+	const pixelRays = new Array(pixelSamples);
+	const pixelCenterX = -1 + pixelHalfWidth + pixelWidth * xPixelIndex;
+	const pixelCenterY =  1 - pixelHalfWidth - pixelWidth * yPixelIndex;
+
+	for (let i = 0; i < roffsets.length; ++i) {
+
+		const sampleX = pixelCenterX + roffsets[i][0];
+		const sampleY = pixelCenterY + roffsets[i][1];
+		const pixelCoordinate = new Vector3(sampleX, sampleY, 0);
+
+		// vector from the eye toward the pixel sample location
+		let direction = Vector3.fromTo(eyeCoordinate, pixelCoordinate); 
+		pixelRays[i] = new Ray(eyeCoordinate, direction);
+	}
+	return pixelRays;
+}
+
+// -----------------------------------------------------------------------------
+function updateAndRender(timeElapsed) {
+
+	let seconds = timeElapsed * 0.001;
+	pointLight.x = Math.cos(seconds) * 0.5;
+	pointLight.z = Math.sin(seconds) * 0.5 - 1;
+
+	box.setRotation(new Vector3(0, seconds/5, 0));
+
+	for (let yPixelIndex = 0; yPixelIndex < pixelsDown; ++yPixelIndex) {
+		for (let xPixelIndex = 0; xPixelIndex < pixelsAcross; ++xPixelIndex) {
+			const pixelRays = generateRaysForPixel(xPixelIndex, yPixelIndex);
+			let averageColor = new Vector3();
+			pixelRays.forEach(ray => {
+				averageColor.add(getColor(ray));
+			});
+			averageColor.multiplyScalar(1/pixelSamples);
+			setPixelColor(xPixelIndex, yPixelIndex, averageColor);
+		}
+	}
+
+	// Take our array of color data and give to the canvas to display
+	canvasContext.putImageData(imageData, 0, 0);
+
+	// Let the browser know it should call this function again when it's time to render
+	requestAnimationFrame(updateAndRender);
+}
+
+// We are ready to render, let the browser know
+requestAnimationFrame(updateAndRender);
+
+</script>
+<script src="raytracer-tests.js"></script>
+</body>
+</html>
