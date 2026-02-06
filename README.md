@@ -1,10 +1,8 @@
 # RayTracer
 
-*Software-based ray tracer implemented in JavaScript*
+A software-based Cornell Box ray tracing renderer implemented using **JavaScript** and the HTML5 **Canvas** API. The project demonstrates the fundamentals of ray–scene intersection, shading, shadows, reflections, and geometric transformations without relying on external graphics libraries.
 
-RayTracer is a software ray tracing renderer implemented from first principles using **JavaScript** and the HTML5 **Canvas** API. The project demonstrates the fundamentals of ray–scene intersection, shading, shadows, reflections, and geometric transformations without relying on external graphics libraries.
-
-The renderer operates entirely on the CPU and renders to a fixed-resolution image plane in the browser.
+The renderer operates entirely on the CPU and renders to a fixed-resolution image plane in the browser. The framerate is genuinely terrible, depending on the reflection depth, but at a low resolution it is capable of nearly-real-time animation of dynamic scenes.
 
 ---
 
@@ -19,6 +17,9 @@ The renderer operates entirely on the CPU and renders to a fixed-resolution imag
   - Planes  
   - Disks  
   - Oriented boxes (via object-space transforms)
+ 
+- **Reusable Materials**  
+  All scene elements are inherited from an abstract SceneObject class, which supports the creation of reusable and extensible materials, allowing simple management of properties like color and reflectivity.
 
 - **Object-space transformations**  
   Scene objects support rotation through explicit construction and inversion of 3×3 rotation matrices, with rays transformed into object space for intersection testing.
@@ -35,41 +36,3 @@ The renderer operates entirely on the CPU and renders to a fixed-resolution imag
 - **Animated scene elements**  
   Object rotation and light position are updated over time to demonstrate dynamic scenes.
 
----
-
-## Rendering Architecture
-
-### Ray generation
-For each pixel, rays are generated from the camera origin through pixel centers (and sub-pixel offsets for anti-aliasing). Directions are normalized and traced into the scene.
-
-### Intersection testing
-Each scene object implements a `raycast` method that returns intersection data including:
-- hit status  
-- intersection point  
-- surface normal  
-- distance from ray origin  
-
-The closest valid intersection is selected per ray.
-
-### Shading and recursion
-At an intersection:
-1. Local illumination is computed using the surface normal and light direction.
-2. Shadow rays determine whether the point is occluded.
-3. If the material is reflective and recursion depth allows, a reflected ray is spawned and traced recursively.
-4. Local and reflected contributions are combined based on material reflectivity.
-
----
-
-## Math & Utilities
-
-The project includes custom implementations of:
-
-- 3D vectors (`Vector3`)
-- 3×3 matrices (`Matrix3`) with inversion
-- Rays (`Ray`)
-
-These utilities support:
-- coordinate transformations  
-- normal computation  
-- reflection direction calculation  
-- object-space intersection logic  
