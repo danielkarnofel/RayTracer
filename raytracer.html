@@ -29,7 +29,7 @@ const pixelsAcross = 256;  // pixels across
 const pixelsDown = 256; // pixels down
 
 // Set dimensions and pixel scale
-const pixelScale = 2;
+const pixelScale = 3;
 canvas.width = pixelsAcross;
 canvas.height = pixelsDown;
 canvas.style.cssText = 'width:' + (pixelsAcross * pixelScale) + 'px;height:' + (pixelsDown * pixelScale) + 'px';
@@ -146,6 +146,7 @@ const ambientLight = 0.2;
 const maxDepth = 3;
 
 // end of raytracer setup ******************************************************
+
 
 
 // -----------------------------------------------------------------------------
@@ -276,5 +277,6 @@ function updateAndRender(timeElapsed) {
 requestAnimationFrame(updateAndRender);
 
 </script>
+<script src="raytracer-tests.js"></script>
 </body>
 </html>
