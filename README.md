@@ -6,6 +6,10 @@ The renderer operates entirely on the CPU and renders to a fixed-resolution imag
 
 ---
 
+<img width="256" height="256" alt="download" src="https://github.com/user-attachments/assets/cc3b1c89-8463-47bb-b01d-ca65201ed071" />
+
+---
+
 ## Features
 
 - **Perspective camera model**  
